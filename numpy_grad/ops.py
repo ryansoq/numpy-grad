@@ -198,3 +198,105 @@ def reshape(a: Tensor, shape) -> Tensor:
 
     out._backward = _bw
     return out
+
+
+def sqrt(a: Tensor) -> Tensor:
+    s = np.sqrt(a.data)
+    out = Tensor(s, _parents=(a,))
+
+    def _bw():
+        _accum(a, out.grad * 0.5 / s)
+
+    out._backward = _bw
+    return out
+
+
+def gelu(a: Tensor) -> Tensor:
+    """GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))"""
+    x = a.data
+    c = np.sqrt(2.0 / np.pi)
+    inner = c * (x + 0.044715 * x ** 3)
+    t = np.tanh(inner)
+    out = Tensor(0.5 * x * (1 + t), _parents=(a,))
+
+    def _bw():
+        # dGELU/dx = 0.5*(1+t) + 0.5*x*(1-t^2)*c*(1 + 0.134145*x^2)
+        d_inner = c * (1.0 + 0.134145 * x ** 2)
+        d = 0.5 * (1.0 + t) + 0.5 * x * (1.0 - t ** 2) * d_inner
+        _accum(a, out.grad * d)
+
+    out._backward = _bw
+    return out
+
+
+def softmax(a: Tensor, axis: int = -1) -> Tensor:
+    """Numerically stable softmax: subtract max before exp."""
+    shifted = a.data - a.data.max(axis=axis, keepdims=True)
+    e = np.exp(shifted)
+    s = e / e.sum(axis=axis, keepdims=True)
+    out = Tensor(s, _parents=(a,))
+
+    def _bw():
+        # softmax Jacobian-vector product: dx = s * (g - sum(g * s, axis))
+        g = out.grad
+        sum_term = (g * s).sum(axis=axis, keepdims=True)
+        _accum(a, s * (g - sum_term))
+
+    out._backward = _bw
+    return out
+
+
+def embedding(table: Tensor, indices: np.ndarray) -> Tensor:
+    """Gather rows of `table` by `indices`. Backward scatter-adds."""
+    idx = np.asarray(indices, dtype=np.int64)
+    out = Tensor(table.data[idx], _parents=(table,))
+
+    def _bw():
+        g = np.zeros_like(table.data)
+        np.add.at(g, idx, out.grad)
+        _accum(table, g)
+
+    out._backward = _bw
+    return out
+
+
+def cross_entropy_loss(logits: Tensor, targets: np.ndarray) -> Tensor:
+    """Mean cross-entropy across the leading dim. logits: (..., V), targets: (...,) ints.
+
+    Computed as logsumexp - logits[target] in a numerically stable way, then averaged.
+    """
+    targets = np.asarray(targets, dtype=np.int64)
+    flat_logits = logits.data.reshape(-1, logits.data.shape[-1])
+    flat_targets = targets.reshape(-1)
+    N, V = flat_logits.shape
+
+    shifted = flat_logits - flat_logits.max(axis=-1, keepdims=True)
+    log_probs = shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
+    loss_val = -log_probs[np.arange(N), flat_targets].mean()
+
+    out = Tensor(loss_val, _parents=(logits,))
+
+    # cache softmax probs for backward
+    probs = np.exp(log_probs)
+
+    def _bw():
+        g = probs.copy()
+        g[np.arange(N), flat_targets] -= 1.0
+        g = g / N * out.grad
+        _accum(logits, g.reshape(logits.shape))
+
+    out._backward = _bw
+    return out
+
+
+def masked_fill(a: Tensor, mask: np.ndarray, value: float) -> Tensor:
+    """Replace positions where mask==True with `value`. Grad zeroes there."""
+    mask = np.asarray(mask, dtype=bool)
+    out_data = np.where(mask, value, a.data)
+    out = Tensor(out_data, _parents=(a,))
+
+    def _bw():
+        _accum(a, np.where(mask, 0.0, out.grad))
+
+    out._backward = _bw
+    return out

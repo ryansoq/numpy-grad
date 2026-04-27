@@ -138,6 +138,10 @@ class Tensor:
         from .ops import relu
         return relu(self)
 
+    def gelu(self):
+        from .ops import gelu
+        return gelu(self)
+
     def exp(self):
         from .ops import exp
         return exp(self)
@@ -145,6 +149,18 @@ class Tensor:
     def log(self):
         from .ops import log
         return log(self)
+
+    def sqrt(self):
+        from .ops import sqrt
+        return sqrt(self)
+
+    def softmax(self, axis: int = -1):
+        from .ops import softmax
+        return softmax(self, axis)
+
+    def masked_fill(self, mask, value: float):
+        from .ops import masked_fill
+        return masked_fill(self, mask, value)
 
 
 def _wrap(x):
