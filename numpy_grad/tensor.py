@@ -18,8 +18,18 @@ def _unbroadcast(grad: np.ndarray, shape: tuple) -> np.ndarray:
 class Tensor:
     __slots__ = ("data", "grad", "_parents", "_backward", "requires_grad")
 
-    def __init__(self, data, requires_grad: bool = False, _parents=()):
-        self.data = np.asarray(data, dtype=np.float64)
+    def __init__(self, data, requires_grad: bool = False, _parents=(),
+                 dtype=None):
+        if dtype is not None:
+            self.data = np.asarray(data, dtype=dtype)
+        elif isinstance(data, (np.ndarray, np.generic)) and \
+                getattr(data, "dtype", None) is not None and data.dtype.kind == "f":
+            # Respect existing float dtype (covers ndarray + numpy scalars
+            # returned by ops like a.sum() so we never silently downcast).
+            self.data = np.asarray(data)
+        else:
+            # Plain Python scalars / lists default to float32 (training-realistic)
+            self.data = np.asarray(data, dtype=np.float32)
         self.grad: np.ndarray | None = None
         self._parents = _parents
         self._backward = lambda: None

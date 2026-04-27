@@ -13,6 +13,9 @@ from .tensor import Tensor
 from . import ops
 
 
+DEFAULT_PARAM_DTYPE = np.float32  # nn module params init at this dtype
+
+
 class Module:
     """Base class — collects parameters via __dict__ walking."""
 
@@ -47,9 +50,13 @@ class Linear(Module):
     def __init__(self, in_dim: int, out_dim: int, bias: bool = True):
         scale = np.sqrt(2.0 / in_dim)
         self.W = Tensor(
-            np.random.randn(in_dim, out_dim) * scale, requires_grad=True
+            (np.random.randn(in_dim, out_dim) * scale).astype(DEFAULT_PARAM_DTYPE),
+            requires_grad=True,
         )
-        self.b = Tensor(np.zeros(out_dim), requires_grad=True) if bias else None
+        self.b = (
+            Tensor(np.zeros(out_dim, dtype=DEFAULT_PARAM_DTYPE), requires_grad=True)
+            if bias else None
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         out = x @ self.W
@@ -139,7 +146,7 @@ class Embedding(Module):
     def __init__(self, num_embeddings: int, embedding_dim: int):
         scale = np.sqrt(2.0 / (num_embeddings + embedding_dim))
         self.weight = Tensor(
-            np.random.randn(num_embeddings, embedding_dim) * scale,
+            (np.random.randn(num_embeddings, embedding_dim) * scale).astype(DEFAULT_PARAM_DTYPE),
             requires_grad=True,
         )
 
@@ -151,8 +158,8 @@ class LayerNorm(Module):
     """LayerNorm over the last dim. y = gamma * (x - mean) / sqrt(var + eps) + beta"""
 
     def __init__(self, dim: int, eps: float = 1e-5):
-        self.gamma = Tensor(np.ones(dim), requires_grad=True)
-        self.beta = Tensor(np.zeros(dim), requires_grad=True)
+        self.gamma = Tensor(np.ones(dim, dtype=DEFAULT_PARAM_DTYPE), requires_grad=True)
+        self.beta = Tensor(np.zeros(dim, dtype=DEFAULT_PARAM_DTYPE), requires_grad=True)
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
