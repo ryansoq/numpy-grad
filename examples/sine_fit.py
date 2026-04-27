@@ -7,6 +7,7 @@ from numpy_grad.nn import Linear, Sequential, ReLU, SGD, mse_loss
 
 
 def main():
+    np.random.seed(0)
     rng = np.random.default_rng(42)
     x_np = rng.uniform(-3.0, 3.0, size=(200, 1))
     y_np = np.sin(x_np)
