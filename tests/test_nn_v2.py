@@ -61,6 +61,32 @@ def test_mha_causal_mask():
         "causal mask violated — past positions changed when future was perturbed"
 
 
+def test_swiglu():
+    """SwiGLU should pass gradient through all 3 weight matrices."""
+    from numpy_grad.nn import SwiGLU
+    np.random.seed(0)
+    swiglu = SwiGLU(d_model=8, d_ff=24)
+    x = Tensor(np.random.randn(3, 8))
+    y = swiglu(x)
+    assert y.shape == (3, 8)
+    y.sum().backward()
+    for layer in [swiglu.w1, swiglu.gate, swiglu.w2]:
+        assert layer.W.grad is not None and layer.W.grad.any()
+
+
+def test_clip_grad_norm():
+    from numpy_grad.nn import clip_grad_norm_
+    p1 = Tensor(np.array([3.0, 4.0]), requires_grad=True)
+    p1.grad = np.array([3.0, 4.0])  # norm = 5
+    p2 = Tensor(np.array([0.0]), requires_grad=True)
+    p2.grad = np.array([12.0])      # adds 144 to sum_sq
+    # total norm = sqrt(25 + 144) = 13
+    n = clip_grad_norm_([p1, p2], max_norm=1.3)
+    assert abs(n - 13.0) < 1e-6
+    # after clip: scale 0.1, norms divide
+    assert abs(np.sqrt((p1.grad ** 2).sum() + (p2.grad ** 2).sum()) - 1.3) < 1e-5
+
+
 def test_transformer_block_trainable():
     """One block + tiny optimizer should reduce loss on a synthetic target."""
     np.random.seed(0)

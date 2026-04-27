@@ -100,6 +100,39 @@ class GELU(Module):
         return x.gelu()
 
 
+class SiLU(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x.silu()
+
+
+class SwiGLU(Module):
+    """SwiGLU FFN (Shazeer 2020): SiLU(xW1) ⊙ (xW_gate) @ W2.
+
+    Uses bias-free Linear layers. Per Shazeer's recommendation, the inner
+    dim is 2/3 of d_ff to match parameter count of a 2-matrix GELU FFN.
+    """
+
+    def __init__(self, d_model: int, d_ff: int):
+        d_inner = max(int(d_ff * 2 // 3), 1)
+        self.w1 = Linear(d_model, d_inner, bias=False)
+        self.gate = Linear(d_model, d_inner, bias=False)
+        self.w2 = Linear(d_inner, d_model, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.w2(self.w1(x).silu() * self.gate(x))
+
+
+def clip_grad_norm_(params, max_norm: float) -> float:
+    """Global gradient clipping (in place). Returns the pre-clip total norm."""
+    grads = [p.grad for p in params if p.grad is not None]
+    total = float(np.sqrt(sum((g * g).sum() for g in grads)))
+    if total > max_norm:
+        scale = max_norm / (total + 1e-8)
+        for g in grads:
+            g *= scale
+    return total
+
+
 class Embedding(Module):
     """Token embedding table. Forward: gather rows by integer indices."""
 

@@ -142,6 +142,10 @@ class Tensor:
         from .ops import gelu
         return gelu(self)
 
+    def silu(self):
+        from .ops import silu
+        return silu(self)
+
     def exp(self):
         from .ops import exp
         return exp(self)

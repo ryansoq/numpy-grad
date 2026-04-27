@@ -19,6 +19,10 @@ def test_gelu():
     gradcheck(lambda a: a.gelu(), (3, 4), atol=1e-4)
 
 
+def test_silu():
+    gradcheck(lambda a: a.silu(), (3, 4), atol=1e-5)
+
+
 def test_softmax_last():
     gradcheck(lambda a: a.softmax(axis=-1), (3, 4))
 

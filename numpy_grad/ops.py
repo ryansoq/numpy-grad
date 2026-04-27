@@ -289,6 +289,20 @@ def cross_entropy_loss(logits: Tensor, targets: np.ndarray) -> Tensor:
     return out
 
 
+def silu(a: Tensor) -> Tensor:
+    """SiLU/Swish: x * sigmoid(x). Used in SwiGLU FFNs."""
+    x = np.clip(a.data, -20, 20)  # avoid overflow in exp(-x)
+    sig = 1.0 / (1.0 + np.exp(-x))
+    out = Tensor(a.data * sig, _parents=(a,))
+
+    def _bw():
+        # d/dx [x * sigmoid(x)] = sigmoid(x) + x * sigmoid(x) * (1 - sigmoid(x))
+        _accum(a, out.grad * (sig + a.data * sig * (1.0 - sig)))
+
+    out._backward = _bw
+    return out
+
+
 def masked_fill(a: Tensor, mask: np.ndarray, value: float) -> Tensor:
     """Replace positions where mask==True with `value`. Grad zeroes there."""
     mask = np.asarray(mask, dtype=bool)
