@@ -45,12 +45,55 @@ for _ in range(500):
     opt.step()
 ```
 
+## Program flow (text)
+
+```
+Tensor(data, requires_grad=True)         // wraps an np.ndarray + .grad slot
+  |
+  | __add__ / __mul__ / @ / .relu() ...   // user expression triggers ops
+  v
+op(parents...) in numpy_grad/ops.py
+  |
+  |- compute forward via numpy            // out_data = a.data @ b.data
+  |- create child Tensor(out_data,        // result also a Tensor
+  |       _parents=(a, b))                // remembers who fed it
+  |- attach _backward closure to child:   // closure captures grads-to-accumulate
+  |      def _bw():
+  |          _accum(a, out.grad @ b.data.T)
+  |          _accum(b, a.data.T @ out.grad)
+  |      child._backward = _bw
+  v
+Repeat for every op → expression graph builds DAG of Tensors
+
+# === when user calls loss.backward() ===
+
+loss.backward(grad=None)
+  |
+  |- self.grad = ones_like(loss.data)     // seed the chain
+  |- topo sort all ancestors via DFS      // each Tensor visited once by id
+  |- for t in reversed(topo):             // unwind in reverse
+  |      t._backward()                    // closure pushes grad into parents
+  v
+Every parameter Tensor now has p.grad populated.
+Constants (no parents, requires_grad=False) get grad too but it's ignored.
+
+# === optimiser is decoupled ===
+
+optimiser.step()                          // AdamW / SGD in numpy_grad/nn.py
+  |- for p in params:
+  |      apply momentum/decay/lr to p.data using p.grad
+  |- (does NOT touch the expression graph; pure parameter mutation)
+
+optimiser.zero_grad()                     // clear .grad slots before next step
+```
+
 ## Primitive ops
 
-12 primitives, every layer composes from these:
+14 primitives, every layer composes from these:
 
 `add` `sub` `mul` `div` `neg` `pow_scalar` `matmul` `sum` `mean` `exp` `log`
-`relu` `transpose` `reshape`
+`sqrt` `gelu` `silu` `softmax` `relu` `embedding` `cross_entropy_loss`
+`masked_fill` `transpose` `reshape`
 
 Each registers a `_backward` closure during forward. `Tensor.backward()` walks
 the topo-sorted graph in reverse and accumulates `grad`. Broadcast dimensions
