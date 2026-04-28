@@ -45,6 +45,58 @@ for _ in range(500):
     opt.step()
 ```
 
+## How autograd works (5-minute tour)
+
+Three concepts; the rest is bookkeeping.
+
+### 1. A `Tensor` is a node in a graph
+
+When you write `c = a * b`, you don't just compute `c` — you also record:
+- *which* tensors fed `c` (its **parents**)
+- *how* to push gradient back into them (its **`_backward` closure**)
+
+So the user-facing expression `loss = ((x @ W).relu().sum() - y) ** 2`
+quietly builds a DAG behind the scenes:
+
+```
+x        W
+ \      /
+  matmul                      ← Tensor: out=x@W,   _backward = "use W.T / x.T"
+   |
+  relu                        ← Tensor: out=max(0,·), _backward = "mask"
+   |
+  sum                         ← Tensor: out=Σ,    _backward = "broadcast 1s"
+   |       y
+    \     /
+     sub                      ← Tensor: out=a-b,  _backward = "+grad / -grad"
+      |
+     **2                      ← Tensor: out=a²,   _backward = "2a · grad"
+      |
+     loss
+```
+
+### 2. Forward = build graph, Backward = walk it in reverse
+
+`loss.backward()` does three things:
+1. Seed `loss.grad = ones_like(loss.data)` — the output gradient is 1.0
+2. Topologically sort all ancestors of `loss` (each Tensor visited once by id)
+3. In reverse topo order, call each Tensor's `_backward()` closure — the
+   closure pushes its contribution into its parents' `.grad`
+
+By the time the walk hits `x` and `W`, their `.grad` slots have been
+accumulated by every chain that flows through them.
+
+### 3. Optimiser is a separate pass over `.grad`
+
+`optimiser.step()` doesn't know anything about the graph. It just walks
+the parameter list and mutates `p.data` using `p.grad` (with momentum,
+weight decay, learning rate, etc.). Then `optimiser.zero_grad()` clears
+`.grad` slots so next iteration starts fresh.
+
+This three-way decoupling — **graph build → graph walk → parameter
+update** — is exactly how PyTorch eager mode works internally. Reading
+this codebase is reading a 200-line version of that.
+
 ## Program flow (text)
 
 ```
