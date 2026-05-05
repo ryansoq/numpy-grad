@@ -148,11 +148,18 @@ class Embedding(Module):
 
 
 class LayerNorm(Module):
-    """LayerNorm over the last dim. y = gamma * (x - mean) / sqrt(var + eps) + beta"""
+    """LayerNorm over the last dim. y = gamma * (x - mean) / sqrt(var + eps) + beta
 
-    def __init__(self, dim: int, eps: float = 1e-5):
+    Set bias=False to drop the additive beta term (modern practice — LLaMA,
+    PaLM, GPT-NeoX. Per Stanford CS336 Lecture 3: bias is hard to learn at
+    small scale, drop it).
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-5, bias: bool = True):
         self.gamma = Tensor(np.ones(dim), requires_grad=True)
-        self.beta = Tensor(np.zeros(dim), requires_grad=True)
+        self.beta = (
+            Tensor(np.zeros(dim), requires_grad=True) if bias else None
+        )
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
@@ -160,7 +167,8 @@ class LayerNorm(Module):
         centered = x - mu
         var = (centered * centered).mean(axis=-1, keepdims=True)
         normed = centered / (var + self.eps).sqrt()
-        return normed * self.gamma + self.beta
+        out = normed * self.gamma
+        return out + self.beta if self.beta is not None else out
 
 
 class MultiHeadAttention(Module):
@@ -170,15 +178,15 @@ class MultiHeadAttention(Module):
     reshape graph simple, costs one extra matmul that BLAS handles in a blink.
     """
 
-    def __init__(self, d_model: int, n_heads: int):
+    def __init__(self, d_model: int, n_heads: int, bias: bool = True):
         assert d_model % n_heads == 0
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
-        self.Wq = Linear(d_model, d_model)
-        self.Wk = Linear(d_model, d_model)
-        self.Wv = Linear(d_model, d_model)
-        self.Wo = Linear(d_model, d_model)
+        self.Wq = Linear(d_model, d_model, bias=bias)
+        self.Wk = Linear(d_model, d_model, bias=bias)
+        self.Wv = Linear(d_model, d_model, bias=bias)
+        self.Wo = Linear(d_model, d_model, bias=bias)
 
     def forward(self, x: Tensor) -> Tensor:
         B, T, D = x.shape
