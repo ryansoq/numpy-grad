@@ -171,6 +171,32 @@ class LayerNorm(Module):
         return out + self.beta if self.beta is not None else out
 
 
+class RMSNorm(Module):
+    """Root Mean Square LayerNorm — the LLaMA / T5 / GPT-NeoX variant.
+
+    y = gamma * x / sqrt(mean(x^2) + eps)
+
+    Differences vs LayerNorm:
+      - No mean centering (skips the subtract-mu step)
+      - No additive beta bias (always gamma-only)
+      - ~25% less compute (Zhang & Sennrich 2019 result), reportedly
+        no quality loss in practice on Llama-scale models.
+
+    Used in Llama 1/2/3, T5, GPT-NeoX, Falcon. Stanford CS336 Lec 3
+    flags it as a "free speed + matched quality" swap from LayerNorm.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6):
+        self.gamma = Tensor(np.ones(dim), requires_grad=True)
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        # mean(x^2) over last dim → scale to unit RMS, then re-scale by gamma.
+        mean_sq = (x * x).mean(axis=-1, keepdims=True)
+        normed = x / (mean_sq + self.eps).sqrt()
+        return normed * self.gamma
+
+
 class MultiHeadAttention(Module):
     """Causal multi-head self-attention via three separate projections.
 
